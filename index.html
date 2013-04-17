@@ -1,0 +1,221 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <style>
+    #jezzball {
+        background: #a6a5a7;
+    }
+    </style>
+    <script src="jquery.min.js"></script>
+    <script src="jquery.physics.js"></script>
+    <script src="underscore-min.js"></script>
+    <script src="cake.js"></script>
+    <script type="application/javascript">
+    Number.prototype.roundTo = function(num) {
+        var resto = this%num
+        if (resto <= (num/2)) { 
+            return this-resto
+        } else {
+            return this+num-resto
+        }
+    }
+    var canvas
+    var Game = function() {}
+    Game.prototype.init = function() {
+        canvas = new Canvas(document.body, 701, 401, { fill: '#a2a1a5' })
+        canvas.top = $('canvas').offset().top
+        canvas.left = $('canvas').offset().left
+        this.helicopter = new Helicopter()
+        this.board = new Board(this.helicopter)
+
+        var self = this
+        $('canvas').mousedown(function() {
+            self.board.update('start')
+        })
+    }
+
+    var Helicopter = function() {
+        var self = this
+        this.x = 50
+        this.y = 150
+        this.weight = 5
+        this.crashed = false
+        this.el = new Rectangle(50, 50, {
+            x: this.x
+          , y: this.y
+          , fill: 'green'
+        })
+        canvas.append(this.el)
+        self.fn_up = function() { self.up() }
+        self.fn_down = function() { self.down() }
+
+        $('canvas').mousedown(function() {
+            canvas.removeFrameListener(self.fn_down)
+            canvas.addFrameListener(self.fn_up)
+            this.crashed = false
+        })
+        $('canvas').mouseup(function() {
+            canvas.removeFrameListener(self.fn_up)
+            canvas.addFrameListener(self.fn_down)
+        })
+    }
+    Helicopter.prototype.crash = function() {
+        this.crashed = true
+        this.el.fill = 'blue'
+    }
+    Helicopter.prototype.up = function() {
+        if(this.crashed) return
+        this.el.y-=this.weight
+    }
+    Helicopter.prototype.down = function() {
+        if(this.crashed) return
+        this.el.y+=this.weight
+    }
+
+    var Board = function(helicopter) {
+        this.height = canvas.height
+        this.width = canvas.width
+        this.color = 'black'
+        this.space_width = 5
+        this.creep_height = 3
+        this.speed = this.space_width * 2
+        this.moving = false
+        this.map = {
+            top: {}
+          , bottom: {}
+        }
+        this.helicopter = helicopter
+        var self = this
+        this.start_fn = function() {
+            self.draw()
+        }
+        this.score = 0
+        this.init()
+    }
+    Board.prototype.creep_amount = function() {
+        return 60
+    }
+    Board.prototype.init = function() {
+        this.creep = {
+            top: this.creep_amount()/2
+          , bottom: this.creep_amount()/2
+        }
+        for(var i=0; i<this.width-this.space_width; i+=this.space_width) {
+            var top_piece = new Rectangle(this.space_width, this.creep.top, {
+                x: i
+              , y: 0
+              , fill: this.color
+            })
+            var bottom_piece = new Rectangle(this.space_width, this.creep.bottom, {
+                x: i
+              , y: this.height-this.creep.bottom
+              , fill: this.color
+            })
+            canvas.append(top_piece)
+            canvas.append(bottom_piece)
+            this.map['top'][i] = top_piece
+            this.map['bottom'][i] = bottom_piece
+        }
+        this.scoreboard = new ElementNode(E('div', 'score: 0'), {
+            fontFamily: 'Arial, Sans-serif'
+          , noScaling: true
+          , color: 'white'
+          , x: 10
+          , y: 5
+          , position: 'absolute'
+          , align: 'left'
+        })
+        canvas.append(this.scoreboard)
+    }
+    Board.prototype.update = function(action) {
+        var self = this
+        if(action === 'start') {
+            if(self.moving) return
+            this.moving = true
+            canvas.addFrameListener(self.start_fn)
+        } else {
+            this.moving = false
+            canvas.removeFrameListener(self.start_fn)
+        }
+    }
+    Board.prototype.random_number_between = function(from, to) {
+        return Math.floor(Math.random()*(to-from+1)+from)
+    }
+    Board.prototype.generate_creep = function(bit) {
+        this.creep = {
+            top: this.creep.top + (bit*this.creep_height)
+          , bottom: this.creep.bottom - (bit*this.creep_height)
+        }
+    }
+    Board.prototype.draw = function() {
+        var self = this
+        var num = Math.floor(this.speed / this.space_width)
+        this.score++
+        this.scoreboard.content.innerHTML = 'score: ' + this.score
+
+        var creep_options = [0,-1,1,0,0,0]
+          , bit = creep_options[this.random_number_between(0,2)]
+
+        this.generate_creep(bit)
+        if(this.creep.top === 0 || this.creep.bottom === this.height ) {
+            this.generate_creep(bit*-1)
+        }
+
+        this.map.top = _.reduce(this.map.top, function(top, el, key) {
+            if(key < self.space_width*num) {
+                canvas.remove(el)
+                delete top[key]
+            } else {
+                el.x -= self.speed
+                top[key-(self.space_width*num)] = el
+            }
+            return top
+        }, {})
+        this.map.bottom = _.reduce(this.map.bottom, function(bottom, el, key) {
+            if(key < self.space_width*num) {
+                canvas.remove(el)
+            } else {
+                el.x -= self.speed
+                bottom[key-(self.space_width*num)] = el
+            }
+            return bottom 
+        }, {})
+        _.times(num, function(i) {
+            var index = ((_.keys(self.map.top).length-1) * self.space_width) + self.space_width
+            var top_piece = new Rectangle(self.space_width, self.creep.top, {
+                x: index
+              , y: 0
+              , fill: self.color
+            })
+            var bottom_piece = new Rectangle(self.space_width, self.creep.bottom, {
+                x: index
+              , y: self.height-self.creep.bottom
+              , fill: self.color
+            })
+            canvas.append(top_piece)
+            canvas.append(bottom_piece)
+            self.map['top'][index] = top_piece
+            self.map['bottom'][index] = bottom_piece
+        })
+
+        if(this.helicopter.el.y <= this.map.top[this.helicopter.el.x].height) {
+            this.helicopter.el.y = this.map.top[this.helicopter.el.x].height
+            this.crash()
+        } else if(this.helicopter.el.y + this.helicopter.el.height >= this.map.bottom[this.helicopter.el.x].y) {
+            this.helicopter.el.y = this.map.bottom[this.helicopter.el.x].y - this.helicopter.el.height
+            this.crash()
+        }
+    }
+    Board.prototype.crash = function() {
+        this.update('stop')
+        this.helicopter.crash()
+    }
+    var Game = new Game()
+    </script>
+</head>
+<body onload="Game.init()">
+    <!--canvas width="701px" height="401px" id="jezzball"></canvas-->
+</body>
+</html>
